@@ -25,9 +25,7 @@ import {
   Tooltip
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
-import VisibilityIcon from '@mui/icons-material/Visibility';
 import { supabase } from '../config/supabaseClient';
-import { format, parseISO, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
@@ -42,7 +40,7 @@ function Pagos() {
   const [nuevoPago, setNuevoPago] = useState({
     alumno_id: '',
     fecha_inicio: new Date(),
-    fecha_fin: addMonths(new Date(), 1),
+    fecha_fin: new Date(),
     monto: '',
     frecuencia: 1
   });
@@ -123,7 +121,7 @@ function Pagos() {
     setNuevoPago(prev => ({
       ...prev,
       fecha_inicio: fecha,
-      fecha_fin: addMonths(fecha, 1)
+      fecha_fin: new Date(fecha.setMonth(fecha.getMonth() + 1))
     }));
   };
 
@@ -131,7 +129,7 @@ function Pagos() {
     setSelectedPago(prev => ({
       ...prev,
       fecha_inicio: fecha,
-      fecha_fin: addMonths(fecha, 1)
+      fecha_fin: new Date(fecha.setMonth(fecha.getMonth() + 1))
     }));
   };
 
@@ -143,8 +141,8 @@ function Pagos() {
     try {
       const pagoParaGuardar = {
         alumno_id: nuevoPago.alumno_id,
-        fecha_inicio: format(nuevoPago.fecha_inicio, 'yyyy-MM-dd'),
-        fecha_fin: format(nuevoPago.fecha_fin, 'yyyy-MM-dd'),
+        fecha_inicio: nuevoPago.fecha_inicio.toISOString().split('T')[0],
+        fecha_fin: nuevoPago.fecha_fin.toISOString().split('T')[0],
         monto: parseFloat(nuevoPago.monto),
         frecuencia: parseInt(nuevoPago.frecuencia)
       };
@@ -162,7 +160,7 @@ function Pagos() {
       setNuevoPago({
         alumno_id: '',
         fecha_inicio: new Date(),
-        fecha_fin: addMonths(new Date(), 1),
+        fecha_fin: new Date(),
         monto: '',
         frecuencia: 1
       });
@@ -181,8 +179,8 @@ function Pagos() {
     try {
       const pagoActualizado = {
         alumno_id: selectedPago.alumno_id,
-        fecha_inicio: format(selectedPago.fecha_inicio, 'yyyy-MM-dd'),
-        fecha_fin: format(selectedPago.fecha_fin, 'yyyy-MM-dd'),
+        fecha_inicio: selectedPago.fecha_inicio.toISOString().split('T')[0],
+        fecha_fin: selectedPago.fecha_fin.toISOString().split('T')[0],
         monto: parseFloat(selectedPago.monto),
         frecuencia: parseInt(selectedPago.frecuencia)
       };
@@ -231,7 +229,7 @@ function Pagos() {
     setNuevoPago({
       alumno_id: '',
       fecha_inicio: new Date(),
-      fecha_fin: addMonths(new Date(), 1),
+      fecha_fin: new Date(),
       monto: '',
       frecuencia: 1
     });
@@ -274,8 +272,8 @@ function Pagos() {
             {pagos.map((pago) => (
               <TableRow key={pago.id}>
                 <TableCell>{pago.alumnos?.nombre}</TableCell>
-                <TableCell>{format(new Date(pago.fecha_inicio), 'dd/MM/yyyy')}</TableCell>
-                <TableCell>{format(new Date(pago.fecha_fin), 'dd/MM/yyyy')}</TableCell>
+                <TableCell>{pago.fecha_inicio.toLocaleDateString()}</TableCell>
+                <TableCell>{pago.fecha_fin.toLocaleDateString()}</TableCell>
                 <TableCell>${pago.monto}</TableCell>
                 <TableCell>{pago.frecuencia} veces por semana</TableCell>
                 <TableCell>

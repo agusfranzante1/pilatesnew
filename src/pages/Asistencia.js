@@ -11,7 +11,7 @@ import {
   Grid
 } from '@mui/material';
 import { supabase } from '../config/supabaseClient';
-import { format, parseISO, isBefore, parse } from 'date-fns';
+import { format, parseISO, isBefore } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 function Asistencia() {
