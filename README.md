@@ -1,3 +1,112 @@
+# Sistema de Gestión de Pilates
+
+Este sistema permite gestionar alumnos, pagos y turnos para un centro de pilates.
+
+## Características
+
+- Gestión de alumnos (registro, edición)
+- Control de pagos mensuales
+- Gestión de turnos con calendario interactivo
+- Validación automática de frecuencia de turnos según el plan contratado
+- Interfaz intuitiva y fácil de usar
+
+## Requisitos Previos
+
+- Node.js (v14 o superior)
+- npm (v6 o superior)
+- Cuenta en Supabase
+
+## Instalación
+
+1. Clonar el repositorio:
+```bash
+git clone [URL_DEL_REPOSITORIO]
+cd pilates-gestion
+```
+
+2. Instalar dependencias:
+```bash
+npm install
+```
+
+3. Configurar variables de entorno:
+Crear un archivo `.env` en la raíz del proyecto con las siguientes variables:
+```
+REACT_APP_SUPABASE_URL=tu_url_de_supabase
+REACT_APP_SUPABASE_ANON_KEY=tu_anon_key
+```
+
+4. Configurar la base de datos:
+- Crear un nuevo proyecto en Supabase
+- Ejecutar el script SQL en `supabase/migrations/20240320000000_initial_schema.sql`
+
+5. Iniciar el servidor de desarrollo:
+```bash
+npm start
+```
+
+## Estructura de la Base de Datos
+
+### Tabla: alumnos
+- id (UUID, PK)
+- nombre (TEXT)
+- email (TEXT, UNIQUE)
+- telefono (TEXT)
+- created_at (TIMESTAMP)
+
+### Tabla: pagos
+- id (UUID, PK)
+- alumno_id (UUID, FK)
+- monto (DECIMAL)
+- frecuencia (INTEGER)
+- fecha_inicio (DATE)
+- fecha_fin (DATE)
+- created_at (TIMESTAMP)
+
+### Tabla: turnos
+- id (UUID, PK)
+- alumno_id (UUID, FK)
+- fecha (DATE)
+- hora (TIME)
+- created_at (TIMESTAMP)
+
+## Uso
+
+1. **Gestión de Alumnos**
+   - Registrar nuevos alumnos
+   - Ver lista de alumnos
+   - Editar información de alumnos
+
+2. **Gestión de Pagos**
+   - Registrar pagos mensuales
+   - Seleccionar frecuencia de entrenamiento (1-4 veces por semana)
+   - Establecer fecha de inicio y fin del período
+
+3. **Gestión de Turnos**
+   - Ver calendario de turnos
+   - Asignar turnos a alumnos
+   - Validación automática de frecuencia según el plan contratado
+
+## Tecnologías Utilizadas
+
+- React
+- Material-UI
+- FullCalendar
+- Supabase
+- Node.js
+
+## Contribución
+
+1. Fork el repositorio
+2. Crear una rama para tu feature (`git checkout -b feature/AmazingFeature`)
+3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
+4. Push a la rama (`git push origin feature/AmazingFeature`)
+5. Abrir un Pull Request
+
+## Licencia
+
+Este proyecto está bajo la Licencia MIT - ver el archivo [LICENSE](LICENSE) para más detalles.
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
