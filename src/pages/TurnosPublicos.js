@@ -57,9 +57,7 @@ function TurnosPublicos() {
 
   const cargarTurnos = async () => {
     try {
-      console.log('Iniciando carga de turnos...');
       const fechaHoy = new Date().toISOString().split('T')[0];
-      console.log('Fecha de hoy:', fechaHoy);
 
       const { data, error } = await supabase
         .from('turnos')
@@ -76,106 +74,87 @@ function TurnosPublicos() {
         .gte('fecha', fechaHoy)
         .order('fecha', { ascending: true });
 
-      if (error) {
-        console.error('Error al cargar turnos:', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log('Turnos cargados:', data);
-
-      // Convertir los datos al formato que espera FullCalendar
-      const eventos = data.map(turno => ({
-        id: turno.id,
-        title: turno.alumnos?.nombre || 'Sin nombre',
-        start: `${turno.fecha}T${turno.hora}`,
-        end: `${turno.fecha}T${turno.hora}`,
-        backgroundColor: '#1976d2',
-        borderColor: '#1976d2',
-        textColor: '#ffffff',
-        extendedProps: {
-          alumnoId: turno.alumno_id
-        }
-      }));
-
-      setTurnos(data || []);
-      setEventosCalendario(eventos);
+      // Agrupar los turnos por fecha y hora
+      const turnosAgrupados = {};
       
-      // Forzar actualización de contadores después de un breve retraso
-      setTimeout(() => {
-        console.log('Actualizando contadores de disponibilidad...');
-        actualizarContadoresDisponibilidad();
-      }, 500);
+      data.forEach(turno => {
+        const key = `${turno.fecha}-${turno.hora}`;
+        if (!turnosAgrupados[key]) {
+          turnosAgrupados[key] = {
+            fecha: turno.fecha,
+            hora: turno.hora,
+            turnos: []
+          };
+        }
+        turnosAgrupados[key].turnos.push(turno);
+      });
+      
+      // Crear eventos para cada grupo
+      const todosLosEventos = [];
+      
+      Object.values(turnosAgrupados).forEach(grupo => {
+        const cantidadTurnos = grupo.turnos.length;
+        
+        // Primero, agregar un evento para cada turno real
+        grupo.turnos.forEach((turno, i) => {
+          todosLosEventos.push({
+            id: turno.id.toString(),
+            title: "Ocupado",
+            start: `${turno.fecha}T${turno.hora}`,
+            end: `${turno.fecha}T${turno.hora}`,
+            backgroundColor: '#1976d2',
+            borderColor: '#1976d2',
+            textColor: '#ffffff',
+            display: 'auto',
+            extendedProps: {
+              alumnoId: turno.alumno_id,
+              grupoId: `${turno.fecha}-${turno.hora}`,
+              esReal: true,
+              cantidad: cantidadTurnos
+            }
+          });
+        });
+        
+        // Si solo hay 1 turno, agregar un evento fantasma invisible para forzar el "+más"
+        if (cantidadTurnos === 1) {
+          todosLosEventos.push({
+            id: `fantasma-${grupo.fecha}-${grupo.hora}`,
+            title: "", // Título vacío para que no aparezca en el popover
+            start: `${grupo.fecha}T${grupo.hora}`,
+            end: `${grupo.fecha}T${grupo.hora}`,
+            display: 'background', // Usar display background para que no aparezca en el popover
+            backgroundColor: 'transparent', // Hacerlo transparente
+            borderColor: 'transparent',
+            textColor: 'transparent',
+            extendedProps: {
+              grupoId: `${grupo.fecha}-${grupo.hora}`,
+              esFantasma: true,
+              cantidad: cantidadTurnos
+            },
+            classNames: ['evento-fantasma'] // Agregar clase para poder ocultarlo con CSS
+          });
+        }
+      });
+      
+      setTurnos([]); // Ya no necesitamos este estado
+      setEventosCalendario(todosLosEventos);
     } catch (error) {
-      console.error('Error al cargar turnos:', error.message);
+      console.error("Error al cargar los turnos:", error);
     }
   };
 
-  // Función para actualizar manualmente los contadores de disponibilidad
+  // Función para calcular contadores de disponibilidad
   const actualizarContadoresDisponibilidad = () => {
-    console.log('Iniciando actualización de contadores...');
-    
-    // Enfoque directo: crear los contadores para cada celda del calendario
-    // 1. Primero obtenemos las fechas de la semana actual que se muestra
-    const columnasDias = document.querySelectorAll('.fc-timegrid-col');
-    const fechasDias = Array.from(columnasDias).map(col => {
-      const header = col.closest('.fc-timegrid-body').querySelector(`.fc-col-header-cell[data-date]`);
-      return header ? header.getAttribute('data-date') : null;
-    }).filter(Boolean);
-    
-    console.log('Fechas encontradas en el calendario:', fechasDias);
-    
-    // 2. Para cada fecha y hora, crear un contador y agregarlo manualmente
-    fechasDias.forEach(fecha => {
-      HORARIOS.forEach(hora => {
-        // Contar los turnos para esta fecha y hora específica
-        const turnosEnEsteHorario = turnos.filter(t => 
-          t.fecha === fecha && t.hora === hora
-        ).length;
-        
-        console.log(`${fecha} ${hora}: ${turnosEnEsteHorario}/5 turnos`);
-        
-        // Buscar la celda correcta para esta fecha y hora
-        const columnaIndex = fechasDias.indexOf(fecha);
-        const columna = document.querySelectorAll('.fc-timegrid-col')[columnaIndex];
-        if (!columna) {
-          console.log(`No se encontró columna para fecha ${fecha}`);
-          return;
-        }
-        
-        // Hora formateada para buscar (convertir "09:00" a "0900")
-        const horaFormateada = hora.replace(':', '');
-        
-        // Buscar la celda de esa hora específica
-        const celdaHora = columna.querySelector(`.fc-timegrid-slot[data-time="${horaFormateada}"], [data-time="${hora}"]`);
-        if (!celdaHora) {
-          console.log(`No se encontró celda para ${fecha} ${hora}`);
-          return;
-        }
-        
-        // Eliminar contadores existentes
-        const contadoresExistentes = celdaHora.querySelectorAll('.disponibilidad-contador');
-        contadoresExistentes.forEach(contador => contador.remove());
-        
-        // Crear nuevo contador
-        const contador = document.createElement('div');
-        contador.className = 'disponibilidad-contador';
-        contador.style.position = 'absolute';
-        contador.style.top = '5px';
-        contador.style.right = '5px';
-        contador.style.backgroundColor = turnosEnEsteHorario >= 5 ? 'rgba(255, 0, 0, 0.8)' : 'rgba(0, 255, 0, 0.8)';
-        contador.style.padding = '3px 6px';
-        contador.style.borderRadius = '4px';
-        contador.style.fontSize = '12px';
-        contador.style.fontWeight = 'bold';
-        contador.style.color = turnosEnEsteHorario >= 5 ? '#ffffff' : '#000000';
-        contador.style.zIndex = '1000';
-        contador.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
-        contador.innerText = `${turnosEnEsteHorario}/5`;
-        
-        celdaHora.style.position = 'relative';
-        celdaHora.appendChild(contador);
+    console.log("Actualizando contadores de disponibilidad");
+    // Asegurar que todas las celdas tengan 30px de altura
+    setTimeout(() => {
+      const slots = document.querySelectorAll('.fc-timegrid-slot, .fc-timegrid-slot-lane');
+      slots.forEach(slot => {
+        slot.style.height = '30px';
       });
-    });
+    }, 100);
   };
 
   const handleDatesSet = (arg) => {
@@ -220,6 +199,76 @@ function TurnosPublicos() {
         height: 'calc(100vh - 100px)',
         '& .fc': { height: '100%' }
       }}>
+        <style>
+          {`
+            /* Estilos para los eventos del calendario */
+            .fc-timegrid-event-harness {
+              margin: 0 !important;
+            }
+            
+            /* Asegurar que los eventos se muestren correctamente */
+            .fc-timegrid-event {
+              width: 100% !important;
+              margin: 0 !important;
+              border-radius: 4px !important;
+              padding: 2px 4px !important;
+              font-size: 0.85em !important;
+            }
+            
+            /* Ajustar el tamaño de las celdas para que sean más compactas */
+            .fc-timegrid-slot {
+              height: 30px !important;
+            }
+            
+            .fc-timegrid-slot-lane {
+              height: 30px !important;
+            }
+            
+            /* Asegurar que los eventos apilados sean visibles */
+            .fc-v-event {
+              min-height: 22px !important;
+              margin: 1px 0 !important;
+            }
+            
+            /* Estilo para el indicador "Mostrar más eventos" */
+            .fc-timegrid-more-link {
+              background-color: rgba(25, 118, 210, 0.2) !important;
+              color: #1976d2 !important;
+              font-weight: bold !important;
+              font-size: 12px !important;
+              border-radius: 4px !important;
+              margin: 1px 0 !important;
+              padding: 2px !important;
+              text-align: center !important;
+              cursor: pointer !important;
+              width: 100% !important;
+              left: 0 !important;
+              right: 0 !important;
+              box-sizing: border-box !important;
+            }
+            
+            /* Asegurar que el contenido del enlace "Mostrar más" ocupe todo el ancho */
+            .fc-timegrid-more-link-inner {
+              width: 100% !important;
+              display: flex !important;
+              justify-content: center !important;
+              align-items: center !important;
+            }
+            
+            /* Mejorar la visualización de los eventos en la columna de tiempo */
+            .fc-timegrid-col-events {
+              margin: 0 !important;
+            }
+            
+            /* Ocultar eventos fantasma */
+            .evento-fantasma {
+              display: none !important;
+              visibility: hidden !important;
+              opacity: 0 !important;
+            }
+          `}
+        </style>
+        
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin]}
           initialView="timeGridWeek"
@@ -235,16 +284,26 @@ function TurnosPublicos() {
           timeZone="local"
           events={eventosCalendario}
           eventContent={renderEventContent}
-          timeFormat={{
+          eventTimeFormat={{
             hour: '2-digit',
             minute: '2-digit',
             hour12: false
           }}
           slotEventOverlap={false}
-          eventMaxStack={5}
+          slotDuration="01:00:00"
+          slotLabelInterval="01:00:00"
+          eventMaxStack={0}
           datesSet={handleDatesSet}
           selectable={false}
           editable={false}
+          height="auto"
+          moreLinkText={(n) => `${n} turno(s)`}
+          dayMaxEvents={1}
+          dayMaxEventRows={1}
+          eventDisplay="auto"
+          displayEventTime={false}
+          nowIndicator={true}
+          moreLinkClick="popover"
         />
       </Box>
     </Box>
@@ -253,21 +312,24 @@ function TurnosPublicos() {
 
 // Función para renderizar el contenido de los eventos
 const renderEventContent = (eventInfo) => {
+  // Obtener la cantidad de turnos del grupo desde las propiedades extendidas
+  const cantidad = eventInfo.event.extendedProps?.cantidad || 1;
+  
   return (
-    <Box sx={{ 
-      p: 1, 
-      width: '100%',
-      height: '100%',
-      display: 'flex',
+    <div style={{ 
+      display: 'flex', 
       alignItems: 'center',
       justifyContent: 'center',
-      fontSize: '0.85em',
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis'
+      height: '100%',
+      width: '100%',
+      backgroundColor: '#1976d2',
+      borderRadius: '4px',
+      color: 'white',
+      padding: '2px 4px',
+      fontSize: '0.85em'
     }}>
-      {eventInfo.event.title}
-    </Box>
+      Ocupado
+    </div>
   );
 };
 

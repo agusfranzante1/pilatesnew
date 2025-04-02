@@ -54,6 +54,7 @@ function Turnos() {
   const [deleteRecurrent, setDeleteRecurrent] = useState(false);
   const [openConfirmDelete, setOpenConfirmDelete] = useState(false);
   const [horariosDisponibles, setHorariosDisponibles] = useState({});
+  const [eventosCalendario, setEventosCalendario] = useState([]);
 
   // Horarios predeterminados (8:00 a 21:00)
   const HORARIOS = Array.from({ length: 14 }, (_, i) => {
@@ -114,6 +115,7 @@ function Turnos() {
           const horaFormateada = hora.replace(':', '');
           
           // Buscar la celda de esa hora específica
+          // Seleccionamos la celda que contiene los eventos
           const celdaHora = columna.querySelector(`.fc-timegrid-slot[data-time="${horaFormateada}"]`);
           if (!celdaHora) {
             console.log(`No se encontró celda para ${fecha} ${hora}`);
@@ -140,6 +142,7 @@ function Turnos() {
           contador.style.boxShadow = '0 1px 3px rgba(0,0,0,0.3)';
           contador.innerText = `${turnosEnEsteHorario}/5`;
           
+          // Asegurar que la celda tenga position relative para que el contador se posicione correctamente
           celdaHora.style.position = 'relative';
           celdaHora.appendChild(contador);
         });
@@ -177,10 +180,11 @@ function Turnos() {
             }
           }
         } catch (err) {
+          console.error('Error al actualizar contador de día:', err);
           // Continuar con la siguiente celda
         }
       });
-    }, 300); // Aumentar el retraso para asegurar que el calendario esté completamente renderizado
+    }, 500); // Aumentar el retraso para asegurar que el calendario esté completamente renderizado
   };
 
   const cargarTurnos = async () => {
@@ -200,8 +204,76 @@ function Turnos() {
         .order('fecha', { ascending: true });
 
       if (error) throw error;
-      console.log('Turnos cargados:', data);
+      
+      // Guardar todos los turnos originales para otras operaciones
       setTurnos(data || []);
+      
+      // Agrupar los turnos por fecha y hora
+      const turnosAgrupados = {};
+      
+      data.forEach(turno => {
+        const key = `${turno.fecha}-${turno.hora}`;
+        if (!turnosAgrupados[key]) {
+          turnosAgrupados[key] = {
+            fecha: turno.fecha,
+            hora: turno.hora,
+            turnos: []
+          };
+        }
+        turnosAgrupados[key].turnos.push(turno);
+      });
+      
+      // Crear eventos individuales para el calendario
+      const todosLosEventos = [];
+      
+      Object.values(turnosAgrupados).forEach(grupo => {
+        const cantidadTurnos = grupo.turnos.length;
+        
+        // Primero, agregar un evento para cada turno real
+        grupo.turnos.forEach((turno, i) => {
+          todosLosEventos.push({
+            id: turno.id.toString(),
+            title: turno.alumnos?.nombre || 'Sin nombre',
+            start: `${turno.fecha}T${turno.hora}`,
+            end: `${turno.fecha}T${turno.hora}`,
+            backgroundColor: '#1976d2',
+            borderColor: '#1976d2',
+            textColor: '#ffffff',
+            display: 'auto',
+            extendedProps: {
+              alumnoId: turno.alumno_id,
+              grupoId: `${turno.fecha}-${turno.hora}`,
+              turnoCompleto: turno,
+              esReal: true,
+              cantidad: cantidadTurnos
+            }
+          });
+        });
+        
+        // Si solo hay 1 turno, agregar un evento fantasma para forzar el "+más"
+        if (cantidadTurnos === 1) {
+          const turno = grupo.turnos[0];
+          todosLosEventos.push({
+            id: `fantasma-${grupo.fecha}-${grupo.hora}`,
+            title: "", // Título vacío para que no aparezca en el popover
+            start: `${grupo.fecha}T${grupo.hora}`,
+            end: `${grupo.fecha}T${grupo.hora}`,
+            display: 'background', // Usar display background para que no aparezca en el popover
+            backgroundColor: 'transparent', // Hacerlo transparente
+            borderColor: 'transparent',
+            textColor: 'transparent',
+            extendedProps: {
+              grupoId: `${turno.fecha}-${turno.hora}`,
+              esFantasma: true,
+              cantidad: cantidadTurnos
+            },
+            classNames: ['evento-fantasma'] // Agregar clase para poder ocultarlo con CSS
+          });
+        }
+      });
+      
+      // Usar los eventos para el calendario
+      setEventosCalendario(todosLosEventos);
       actualizarHorariosDisponibles(data || []);
     } catch (error) {
       console.error('Error al cargar turnos:', error.message);
@@ -483,24 +555,22 @@ function Turnos() {
   };
 
   const renderEventContent = (eventInfo) => {
+    const cantidad = eventInfo.event.extendedProps?.cantidad || 0;
+    
     return (
       <div style={{ 
         display: 'flex', 
-        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
         height: '100%',
         width: '100%',
-        position: 'relative'
+        backgroundColor: '#1976d2',
+        borderRadius: '4px',
+        color: 'white',
+        padding: '2px 4px',
+        fontSize: '0.85em'
       }}>
-        <div style={{ 
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '4px',
-          overflow: 'hidden'
-        }}>
-          {eventInfo.event.title}
-        </div>
+        {eventInfo.event.title}
       </div>
     );
   };
@@ -551,9 +621,11 @@ function Turnos() {
   const steps = ['Seleccionar Alumno', 'Confirmar Pago', 'Seleccionar Turnos'];
 
   const handleEventClick = (info) => {
-    const turno = turnos.find(t => t.id === info.event.id);
-    if (turno) {
-      setSelectedTurno(turno);
+    // Obtener el turno completo desde las propiedades extendidas
+    const turnoCompleto = info.event.extendedProps?.turnoCompleto;
+    
+    if (turnoCompleto) {
+      setSelectedTurno(turnoCompleto);
       setOpenDelete(true);
     }
   };
@@ -627,6 +699,77 @@ function Turnos() {
         </Alert>
       )}
 
+      {/* Estilos CSS personalizados para el FullCalendar */}
+      <style>
+        {`
+          /* Estilos para los eventos del calendario */
+          .fc-timegrid-event-harness {
+            margin: 0 !important;
+          }
+          
+          /* Asegurar que los eventos se muestren correctamente */
+          .fc-timegrid-event {
+            width: 100% !important;
+            margin: 0 !important;
+            border-radius: 4px !important;
+            padding: 2px 4px !important;
+            font-size: 0.85em !important;
+          }
+          
+          /* Ajustar el tamaño de las celdas para que sean más compactas */
+          .fc-timegrid-slot {
+            height: 30px !important;
+          }
+          
+          .fc-timegrid-slot-lane {
+            height: 30px !important;
+          }
+          
+          /* Asegurar que los eventos apilados sean visibles */
+          .fc-v-event {
+            min-height: 22px !important;
+            margin: 1px 0 !important;
+          }
+          
+          /* Estilo para el indicador "Mostrar más eventos" */
+          .fc-timegrid-more-link {
+            background-color: rgba(25, 118, 210, 0.2) !important;
+            color: #1976d2 !important;
+            font-weight: bold !important;
+            font-size: 12px !important;
+            border-radius: 4px !important;
+            margin: 1px 0 !important;
+            padding: 2px !important;
+            text-align: center !important;
+            cursor: pointer !important;
+            width: 100% !important;
+            left: 0 !important;
+            right: 0 !important;
+            box-sizing: border-box !important;
+          }
+          
+          /* Asegurar que el contenido del enlace "Mostrar más" ocupe todo el ancho */
+          .fc-timegrid-more-link-inner {
+            width: 100% !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+          }
+          
+          /* Mejorar la visualización de los eventos en la columna de tiempo */
+          .fc-timegrid-col-events {
+            margin: 0 !important;
+          }
+          
+          /* Ocultar eventos fantasma */
+          .evento-fantasma {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+          }
+        `}
+      </style>
+
       <Box sx={{ height: 'calc(100vh - 200px)' }}>
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -639,15 +782,10 @@ function Turnos() {
           slotMinTime="08:00:00"
           slotMaxTime="20:00:00"
           allDaySlot={false}
-          events={turnos.map(turno => ({
-            id: turno.id,
-            title: turno.alumnos?.nombre || 'Sin nombre',
-            start: `${turno.fecha}T${turno.hora}`,
-            end: `${turno.fecha}T${turno.hora}`,
-          }))}
+          events={eventosCalendario}
           eventContent={renderEventContent}
           dateClick={handleOpen}
-          height="100%"
+          height="auto"
           locale={esLocale}
           timeZone="local"
           eventTimeFormat={{
@@ -655,10 +793,20 @@ function Turnos() {
             minute: '2-digit',
             hour12: false
           }}
-          eventClick={handleEventClick}
           slotEventOverlap={false}
-          eventMaxStack={5}
+          slotDuration="01:00:00"
+          slotLabelInterval="01:00:00"
+          eventMaxStack={0}
           datesSet={handleDatesSet}
+          selectable={false}
+          editable={false}
+          moreLinkText={(n) => `${n} turno(s)`}
+          dayMaxEvents={1}
+          dayMaxEventRows={1}
+          eventDisplay="auto"
+          displayEventTime={false}
+          moreLinkClick="popover"
+          eventClick={handleEventClick}
         />
       </Box>
 
