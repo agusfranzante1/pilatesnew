@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
-  Button
+  Button,
+  IconButton
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import FullCalendar from '@fullcalendar/react';
@@ -13,6 +14,7 @@ import { supabase } from '../config/supabaseClient';
 import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useTheme } from '@mui/material/styles';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 function TurnosPublicos() {
   const navigate = useNavigate();
@@ -20,8 +22,8 @@ function TurnosPublicos() {
   const [eventosCalendario, setEventosCalendario] = useState([]);
   const theme = useTheme();
 
-  // Horarios predeterminados (8:00 a 21:00)
-  const HORARIOS = Array.from({ length: 14 }, (_, i) => {
+  // Horarios predeterminados (8:00 a 22:00)
+  const HORARIOS = Array.from({ length: 15 }, (_, i) => {
     const hora = i + 8;
     return `${hora.toString().padStart(2, '0')}:00`;
   });
@@ -48,16 +50,35 @@ function TurnosPublicos() {
         console.log('Status de suscripción:', status);
       });
 
+    // Establecer un intervalo para actualizar los turnos automáticamente cada 30 segundos
+    const intervalo = setInterval(() => {
+      console.log('Actualizando turnos automáticamente...');
+      cargarTurnos();
+    }, 30000);
+
+    // Agregar listener para el evento personalizado de actualización de turnos
+    const handleTurnosActualizados = (event) => {
+      console.log('Evento de turnos actualizados recibido en TurnosPublicos:', event.detail);
+      cargarTurnos();
+    };
+    
+    window.addEventListener('turnosActualizados', handleTurnosActualizados);
+
     // Limpiar suscripción al desmontar
     return () => {
-      console.log('Limpiando suscripción');
+      console.log('Limpiando suscripción y intervalo');
       channel.unsubscribe();
+      clearInterval(intervalo);
+      window.removeEventListener('turnosActualizados', handleTurnosActualizados);
     };
   }, []);
 
   const cargarTurnos = async () => {
     try {
+      console.log('Cargando turnos públicos...');
+      
       const fechaHoy = new Date().toISOString().split('T')[0];
+      console.log('Fecha de hoy para filtro:', fechaHoy);
 
       const { data, error } = await supabase
         .from('turnos')
@@ -75,7 +96,23 @@ function TurnosPublicos() {
         .order('fecha', { ascending: true });
 
       if (error) throw error;
-
+      
+      console.log('Turnos públicos cargados:', data?.length || 0);
+      
+      // Verificar si hay turnos para Agustín Franzante (para depuración)
+      const turnosFranzante = data?.filter(turno => 
+        turno.alumnos?.nombre?.includes('Franzante') || 
+        turno.alumnos?.nombre?.includes('FRANZANTE') || 
+        turno.alumnos?.nombre?.includes('franzante')
+      );
+      
+      if (turnosFranzante && turnosFranzante.length > 0) {
+        console.log('Turnos públicos encontrados para Franzante:', turnosFranzante.length);
+        console.log('Detalle de turnos públicos de Franzante:', turnosFranzante);
+      } else {
+        console.log('No se encontraron turnos públicos para Franzante');
+      }
+      
       // Agrupar los turnos por fecha y hora
       const turnosAgrupados = {};
       
@@ -96,6 +133,9 @@ function TurnosPublicos() {
       
       Object.values(turnosAgrupados).forEach(grupo => {
         const cantidadTurnos = grupo.turnos.length;
+        
+        // Depurar los grupos por fecha
+        console.log(`Grupo público: ${grupo.fecha} ${grupo.hora} - ${cantidadTurnos} turnos`);
         
         // Primero, agregar un evento para cada turno real
         grupo.turnos.forEach((turno, i) => {
@@ -138,11 +178,18 @@ function TurnosPublicos() {
         }
       });
       
-      setTurnos([]); // Ya no necesitamos este estado
+      console.log('Total de eventos públicos generados para el calendario:', todosLosEventos.length);
+      
       setEventosCalendario(todosLosEventos);
     } catch (error) {
       console.error("Error al cargar los turnos:", error);
     }
+  };
+
+  // Función para recargar manualmente
+  const recargarTurnos = () => {
+    console.log('Recargando turnos públicos manualmente...');
+    cargarTurnos();
   };
 
   // Función para calcular contadores de disponibilidad
@@ -190,7 +237,13 @@ function TurnosPublicos() {
         }}>
           Disponibilidad de Turnos
         </Typography>
-        <Box sx={{ width: '100px' }}></Box> {/* Espaciador para centrar el título */}
+        <IconButton 
+          color="primary" 
+          onClick={recargarTurnos}
+          sx={{ width: '100px' }}
+        >
+          <RefreshIcon />
+        </IconButton>
       </Box>
 
       <Box sx={{ 
@@ -278,7 +331,7 @@ function TurnosPublicos() {
             right: 'dayGridMonth,timeGridWeek'
           }}
           slotMinTime="08:00:00"
-          slotMaxTime="20:00:00"
+          slotMaxTime="22:00:00"
           allDaySlot={false}
           locale={esLocale}
           timeZone="local"

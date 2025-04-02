@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Button,
@@ -37,6 +37,8 @@ import { es } from 'date-fns/locale';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import TextField from '@mui/material/TextField';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { useLocation } from 'react-router-dom';
 
 function Turnos() {
   const [turnos, setTurnos] = useState([]);
@@ -55,6 +57,8 @@ function Turnos() {
   const [openConfirmDelete, setOpenConfirmDelete] = useState(false);
   const [horariosDisponibles, setHorariosDisponibles] = useState({});
   const [eventosCalendario, setEventosCalendario] = useState([]);
+  const location = useLocation();
+  const calendarRef = useRef(null);
 
   // Horarios predeterminados (8:00 a 21:00)
   const HORARIOS = Array.from({ length: 14 }, (_, i) => {
@@ -72,14 +76,61 @@ function Turnos() {
   ];
 
   useEffect(() => {
+    console.log('Componente Turnos montado');
     cargarTurnos();
     cargarAlumnos();
+    
+    // Establecer un intervalo para actualizar los turnos automáticamente cada 30 segundos
+    const intervalo = setInterval(() => {
+      console.log('Actualizando turnos automáticamente...');
+      cargarTurnos();
+    }, 30000);
+    
+    // Suscribirse a cambios en la tabla de turnos
+    const channel = supabase.channel('turnos-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'turnos',
+        },
+        (payload) => {
+          console.log('Cambio detectado en turnos:', payload);
+          cargarTurnos();
+        }
+      )
+      .subscribe((status) => {
+        console.log('Status de suscripción de turnos:', status);
+      });
+    
+    // Agregar listener para el evento personalizado de actualización de turnos
+    const handleTurnosActualizados = (event) => {
+      console.log('Evento de turnos actualizados recibido:', event.detail);
+      cargarTurnos();
+    };
+    
+    window.addEventListener('turnosActualizados', handleTurnosActualizados);
+    
+    // Limpiar el intervalo, la suscripción y el listener al desmontar el componente
+    return () => {
+      console.log('Componente Turnos desmontado');
+      clearInterval(intervalo);
+      channel.unsubscribe();
+      window.removeEventListener('turnosActualizados', handleTurnosActualizados);
+    };
   }, []);
 
   // Efecto para actualizar los contadores de disponibilidad cuando cambian los turnos
   useEffect(() => {
     actualizarContadoresDisponibilidad();
   }, [turnos]);
+
+  // Efecto para detectar cuando el usuario regresa a la página
+  useEffect(() => {
+    // Recargar turnos cada vez que el usuario navega a esta página
+    cargarTurnos();
+  }, [location]);
 
   // Función para actualizar manualmente los contadores de disponibilidad
   const actualizarContadoresDisponibilidad = () => {
@@ -189,6 +240,8 @@ function Turnos() {
 
   const cargarTurnos = async () => {
     try {
+      console.log('Cargando turnos...');
+      
       const { data, error } = await supabase
         .from('turnos')
         .select(`
@@ -205,6 +258,23 @@ function Turnos() {
 
       if (error) throw error;
       
+      console.log('Total de turnos cargados:', data?.length || 0);
+      console.log('Datos de turnos cargados:', data);
+      
+      // Verificar si hay turnos para Agustín Franzante (para depuración)
+      const turnosFranzante = data?.filter(turno => 
+        turno.alumnos?.nombre?.includes('Franzante') || 
+        turno.alumnos?.nombre?.includes('FRANZANTE') || 
+        turno.alumnos?.nombre?.includes('franzante')
+      );
+      
+      if (turnosFranzante && turnosFranzante.length > 0) {
+        console.log('Turnos encontrados para Franzante:', turnosFranzante.length);
+        console.log('Detalle de turnos de Franzante:', turnosFranzante);
+      } else {
+        console.log('No se encontraron turnos para Franzante');
+      }
+      
       // Guardar todos los turnos originales para otras operaciones
       setTurnos(data || []);
       
@@ -212,6 +282,12 @@ function Turnos() {
       const turnosAgrupados = {};
       
       data.forEach(turno => {
+        // Asegurarse de que el turno tenga fecha y hora
+        if (!turno.fecha || !turno.hora) {
+          console.warn('Turno sin fecha o hora:', turno);
+          return;
+        }
+        
         const key = `${turno.fecha}-${turno.hora}`;
         if (!turnosAgrupados[key]) {
           turnosAgrupados[key] = {
@@ -228,6 +304,9 @@ function Turnos() {
       
       Object.values(turnosAgrupados).forEach(grupo => {
         const cantidadTurnos = grupo.turnos.length;
+        
+        // Depurar los grupos por fecha
+        console.log(`Grupo: ${grupo.fecha} ${grupo.hora} - ${cantidadTurnos} turnos`);
         
         // Primero, agregar un evento para cada turno real
         grupo.turnos.forEach((turno, i) => {
@@ -256,8 +335,8 @@ function Turnos() {
           todosLosEventos.push({
             id: `fantasma-${grupo.fecha}-${grupo.hora}`,
             title: "", // Título vacío para que no aparezca en el popover
-            start: `${grupo.fecha}T${grupo.hora}`,
-            end: `${grupo.fecha}T${grupo.hora}`,
+            start: `${grupo.fecha}T${turno.hora}`,
+            end: `${grupo.fecha}T${turno.hora}`,
             display: 'background', // Usar display background para que no aparezca en el popover
             backgroundColor: 'transparent', // Hacerlo transparente
             borderColor: 'transparent',
@@ -272,9 +351,18 @@ function Turnos() {
         }
       });
       
+      console.log('Total de eventos generados para el calendario:', todosLosEventos.length);
+      
       // Usar los eventos para el calendario
       setEventosCalendario(todosLosEventos);
       actualizarHorariosDisponibles(data || []);
+      
+      // Forzar una actualización del calendario si existe
+      if (calendarRef.current) {
+        console.log('Forzando actualización del calendario');
+        const calendarApi = calendarRef.current.getApi();
+        calendarApi.refetchEvents();
+      }
     } catch (error) {
       console.error('Error al cargar turnos:', error.message);
       setError('Error al cargar los turnos: ' + error.message);
@@ -315,8 +403,10 @@ function Turnos() {
   };
 
   const handleOpen = (info) => {
-    setSelectedDate(info.date);
-    setOpen(true);
+    // Mostrar un mensaje informativo en lugar de abrir el diálogo
+    setError('La creación de turnos ahora se realiza desde la sección de Pagos. Por favor, cree un pago y seleccione los días y horarios para generar turnos automáticamente.');
+    // No abrir el diálogo
+    // setOpen(true);
   };
 
   const handleClose = () => {
@@ -387,6 +477,29 @@ function Turnos() {
       console.log('Fecha seleccionada:', selectedDate);
       console.log('Turnos seleccionados:', turnosSeleccionados);
       
+      // Verificar si el alumno tiene un pago activo
+      const fechaHoy = format(new Date(), 'yyyy-MM-dd');
+      let pagoId = null;
+      
+      // Obtener pago activo del alumno para la fecha actual
+      const { data: pagoActivo, error: pagoError } = await supabase
+        .from('pagos')
+        .select('id')
+        .eq('alumno_id', selectedAlumno)
+        .lte('fecha_inicio', fechaHoy)
+        .gte('fecha_fin', fechaHoy)
+        .order('fecha_fin', { ascending: false })
+        .limit(1);
+      
+      if (pagoError) {
+        console.error('Error al buscar pago activo:', pagoError);
+      } else if (pagoActivo && pagoActivo.length > 0) {
+        pagoId = pagoActivo[0].id;
+        console.log('Pago activo encontrado:', pagoId);
+      } else {
+        console.log('No se encontró un pago activo para este alumno');
+      }
+      
       const fechaInicio = new Date(selectedDate);
       // Calcular la fecha fin: un mes más 7 días desde la fecha de inicio
       const fechaFinMes = new Date(fechaInicio);
@@ -456,6 +569,12 @@ function Turnos() {
               fecha: fechaFormateada,
               hora: turno.hora,
             };
+            
+            // Si existe un pago activo, asociarlo con el turno
+            if (pagoId) {
+              nuevoTurno.pago_id = pagoId;
+            }
+            
             turnosParaGuardar.push(nuevoTurno);
           }
         }
@@ -496,25 +615,36 @@ function Turnos() {
         }
 
         // Insertar el turno
-        const { data, error } = await supabase
-          .from('turnos')
-          .insert([turnoParaGuardar])
-          .select(`
-            id,
-            alumno_id,
-            fecha,
-            hora,
-            alumnos (
+        try {
+          const { data, error } = await supabase
+            .from('turnos')
+            .insert([turnoParaGuardar])
+            .select(`
               id,
-              nombre
-            )
-          `);
+              alumno_id,
+              fecha,
+              hora,
+              pago_id,
+              alumnos (
+                id,
+                nombre
+              )
+            `);
 
-        if (error) {
+          if (error) {
+            errorAlInsertar = true;
+            console.error('Error detallado al insertar turno:', error);
+            console.error('Código:', error.code);
+            console.error('Mensaje:', error.message);
+            console.error('Detalles:', error.details);
+            console.error('Pista:', error.hint);
+            console.error('Turno que se intentó guardar:', turnoParaGuardar);
+          } else if (data && data.length > 0) {
+            turnosInsertados = [...turnosInsertados, ...data];
+          }
+        } catch (innerError) {
           errorAlInsertar = true;
-          console.error('Error al insertar turno:', error);
-        } else if (data && data.length > 0) {
-          turnosInsertados = [...turnosInsertados, ...data];
+          console.error('Error al insertar turno:', innerError);
         }
       }
 
@@ -526,7 +656,10 @@ function Turnos() {
       }
 
       if (errorAlInsertar) {
-        throw new Error('Hubo errores al insertar algunos turnos. Verifique los datos e intente nuevamente.');
+        const errorMsg = 'Hubo errores al insertar algunos turnos. Por favor revise los datos y compruebe que la tabla turnos tiene el campo pago_id.';
+        console.error(errorMsg);
+        console.error('Verify if migration has been applied to add pago_id field to turnos table');
+        throw new Error(errorMsg);
       }
 
       setTurnos(prevTurnos => {
@@ -687,126 +820,121 @@ function Turnos() {
     }
   };
 
+  const handleDateClick = (info) => {
+    // Mostrar un mensaje informativo indicando que la funcionalidad de creación de turnos
+    // ahora está disponible en la sección de Pagos
+    setError('La creación de turnos recurrentes ahora se realiza desde la sección de Pagos. Por favor, cree un nuevo pago y seleccione la opción "Generar turnos automáticamente".');
+    
+    // No abrir el diálogo de creación de turnos
+    // setOpen(true);
+    // setSelectedDate(info.date);
+  };
+
+  const handleOpenDialog = () => {
+    // Mostrar un mensaje informativo indicando que la funcionalidad de creación de turnos
+    // ahora está disponible en la sección de Pagos
+    setError('La creación de turnos recurrentes ahora se realiza desde la sección de Pagos. Por favor, cree un nuevo pago y seleccione la opción "Generar turnos automáticamente".');
+    
+    // No abrir el diálogo de creación de turnos
+    // setOpen(true);
+  };
+
+  // Función para recargar los turnos manualmente
+  const recargarTurnos = () => {
+    console.log('Recargando turnos manualmente...');
+    cargarTurnos();
+    
+    // También forzar una actualización de la UI
+    if (calendarRef.current) {
+      const calendarApi = calendarRef.current.getApi();
+      calendarApi.refetchEvents();
+      calendarApi.render(); // Forzar renderizado completo
+      setTimeout(actualizarContadoresDisponibilidad, 500);
+    }
+  };
+
+  // Función para manejar el montaje de eventos en el calendario
+  const handleEventoMontado = (info) => {
+    const { event } = info;
+    
+    // Añadir información al elemento del evento solo si es un evento real
+    if (event.extendedProps.esReal && !event.extendedProps.esFantasma) {
+      // Mostrar información adicional en los tooltips
+      info.el.title = `${event.title} - ${event.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})}`;
+      
+      // Añadir clases para mejorar la visualización
+      info.el.classList.add('turno-real');
+    }
+    
+    // Ocultar los eventos fantasma
+    if (event.extendedProps.esFantasma) {
+      info.el.style.display = 'none';
+      info.el.style.visibility = 'hidden';
+      info.el.style.opacity = '0';
+    }
+  };
+
   return (
-    <Box>
-      <Typography variant="h4" sx={{ mb: 3 }}>
+    <Box sx={{ p: 2 }}>
+      <Typography variant="h4" gutterBottom>
         Gestión de Turnos
       </Typography>
-
+      
+      <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+        La creación de turnos ahora se realiza desde la sección de Pagos. Esta vista es solo para consultar y eliminar turnos existentes.
+      </Typography>
+      
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        <Button 
+          variant="outlined" 
+          color="primary" 
+          startIcon={<RefreshIcon />}
+          onClick={recargarTurnos}
+          sx={{ mr: 2 }}
+        >
+          Actualizar Turnos
+        </Button>
+      </Box>
+      
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
-
-      {/* Estilos CSS personalizados para el FullCalendar */}
-      <style>
-        {`
-          /* Estilos para los eventos del calendario */
-          .fc-timegrid-event-harness {
-            margin: 0 !important;
-          }
-          
-          /* Asegurar que los eventos se muestren correctamente */
-          .fc-timegrid-event {
-            width: 100% !important;
-            margin: 0 !important;
-            border-radius: 4px !important;
-            padding: 2px 4px !important;
-            font-size: 0.85em !important;
-          }
-          
-          /* Ajustar el tamaño de las celdas para que sean más compactas */
-          .fc-timegrid-slot {
-            height: 30px !important;
-          }
-          
-          .fc-timegrid-slot-lane {
-            height: 30px !important;
-          }
-          
-          /* Asegurar que los eventos apilados sean visibles */
-          .fc-v-event {
-            min-height: 22px !important;
-            margin: 1px 0 !important;
-          }
-          
-          /* Estilo para el indicador "Mostrar más eventos" */
-          .fc-timegrid-more-link {
-            background-color: rgba(25, 118, 210, 0.2) !important;
-            color: #1976d2 !important;
-            font-weight: bold !important;
-            font-size: 12px !important;
-            border-radius: 4px !important;
-            margin: 1px 0 !important;
-            padding: 2px !important;
-            text-align: center !important;
-            cursor: pointer !important;
-            width: 100% !important;
-            left: 0 !important;
-            right: 0 !important;
-            box-sizing: border-box !important;
-          }
-          
-          /* Asegurar que el contenido del enlace "Mostrar más" ocupe todo el ancho */
-          .fc-timegrid-more-link-inner {
-            width: 100% !important;
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
-          }
-          
-          /* Mejorar la visualización de los eventos en la columna de tiempo */
-          .fc-timegrid-col-events {
-            margin: 0 !important;
-          }
-          
-          /* Ocultar eventos fantasma */
-          .evento-fantasma {
-            display: none !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-          }
-        `}
-      </style>
-
-      <Box sx={{ height: 'calc(100vh - 200px)' }}>
+      
+      <Box sx={{ 
+        height: 'calc(100vh - 180px)',
+        '.fc-event-title': { 
+          whiteSpace: 'normal',
+          overflow: 'hidden'
+        },
+        '.evento-fantasma': {
+          display: 'none !important'
+        }
+      }}>
         <FullCalendar
+          ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          initialView="timeGridWeek"
           headerToolbar={{
             left: 'prev,next today',
             center: 'title',
-            right: 'dayGridMonth,timeGridWeek,timeGridDay',
+            right: 'dayGridMonth,timeGridWeek,timeGridDay'
           }}
-          slotMinTime="08:00:00"
-          slotMaxTime="20:00:00"
-          allDaySlot={false}
-          events={eventosCalendario}
-          eventContent={renderEventContent}
-          dateClick={handleOpen}
-          height="auto"
-          locale={esLocale}
-          timeZone="local"
-          eventTimeFormat={{
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          }}
-          slotEventOverlap={false}
-          slotDuration="01:00:00"
-          slotLabelInterval="01:00:00"
-          eventMaxStack={0}
-          datesSet={handleDatesSet}
-          selectable={false}
+          initialView="timeGridWeek"
           editable={false}
-          moreLinkText={(n) => `${n} turno(s)`}
-          dayMaxEvents={1}
-          dayMaxEventRows={1}
-          eventDisplay="auto"
-          displayEventTime={false}
-          moreLinkClick="popover"
+          selectable={false}
+          selectMirror={false}
+          dayMaxEvents={true}
+          weekends={false}
+          slotMinTime="08:00:00"
+          slotMaxTime="22:00:00"
+          allDaySlot={false}
+          locale={esLocale}
+          events={eventosCalendario}
+          eventClassNames={'turno-evento'}
           eventClick={handleEventClick}
+          datesSet={handleDatesSet}
+          eventDidMount={handleEventoMontado}
         />
       </Box>
 

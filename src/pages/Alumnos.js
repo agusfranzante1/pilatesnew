@@ -18,16 +18,24 @@ import {
   Typography,
   IconButton,
   Tooltip,
-  Alert
+  Alert,
+  FormControlLabel,
+  Switch,
+  FormGroup
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import { supabase } from '../config/supabaseClient';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
+import { es } from 'date-fns/locale';
 
 function Alumnos() {
   const navigate = useNavigate();
   const [alumnos, setAlumnos] = useState([]);
+  const [alumnosFiltrados, setAlumnosFiltrados] = useState([]);
+  const [busqueda, setBusqueda] = useState('');
   const [open, setOpen] = useState(false);
   const [openEdit, setOpenEdit] = useState(false);
   const [selectedAlumno, setSelectedAlumno] = useState(null);
@@ -36,6 +44,8 @@ function Alumnos() {
     email: '',
     telefono: '',
     dni: '',
+    fecha_nacimiento: null,
+    requiere_factura: false,
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -44,25 +54,47 @@ function Alumnos() {
     cargarAlumnos();
   }, []);
 
-  const cargarAlumnos = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('alumnos')
-        .select('*')
-        .order('nombre');
+  // Efecto para filtrar alumnos cuando cambia la búsqueda o la lista de alumnos
+  useEffect(() => {
+    filtrarAlumnos();
+  }, [busqueda, alumnos]);
 
-      if (error) throw error;
-      setAlumnos(data || []);
-    } catch (error) {
-      console.error('Error al cargar alumnos:', error.message);
-      setError('Error al cargar los alumnos: ' + error.message);
+  const filtrarAlumnos = () => {
+    if (!busqueda.trim()) {
+      // Si no hay término de búsqueda, mostrar todos los alumnos
+      setAlumnosFiltrados(alumnos);
+      return;
     }
+
+    // Filtrar alumnos que contengan la cadena de búsqueda (ignorar mayúsculas/minúsculas)
+    const terminoBusqueda = busqueda.toLowerCase();
+    const resultados = alumnos.filter(alumno => 
+      alumno.nombre.toLowerCase().includes(terminoBusqueda) || 
+      (alumno.dni && alumno.dni.includes(terminoBusqueda))
+    );
+    
+    setAlumnosFiltrados(resultados);
+  };
+
+  const handleBusquedaChange = (e) => {
+    setBusqueda(e.target.value);
+  };
+
+  const limpiarBusqueda = () => {
+    setBusqueda('');
   };
 
   const handleOpen = () => setOpen(true);
   const handleClose = () => {
     setOpen(false);
-    setNuevoAlumno({ nombre: '', email: '', telefono: '', dni: '' });
+    setNuevoAlumno({ 
+      nombre: '', 
+      email: '', 
+      telefono: '', 
+      dni: '', 
+      fecha_nacimiento: null,
+      requiere_factura: false 
+    });
   };
 
   const handleOpenEdit = (alumno) => {
@@ -76,16 +108,32 @@ function Alumnos() {
   };
 
   const handleChange = (e) => {
+    const { name, value, checked, type } = e.target;
     setNuevoAlumno({
       ...nuevoAlumno,
-      [e.target.name]: e.target.value,
+      [name]: type === 'checkbox' ? checked : value,
+    });
+  };
+
+  const handleFechaNacimientoChange = (fecha) => {
+    setNuevoAlumno({
+      ...nuevoAlumno,
+      fecha_nacimiento: fecha,
     });
   };
 
   const handleEditChange = (e) => {
+    const { name, value, checked, type } = e.target;
     setSelectedAlumno({
       ...selectedAlumno,
-      [e.target.name]: e.target.value,
+      [name]: type === 'checkbox' ? checked : value,
+    });
+  };
+
+  const handleEditFechaNacimientoChange = (fecha) => {
+    setSelectedAlumno({
+      ...selectedAlumno,
+      fecha_nacimiento: fecha,
     });
   };
 
@@ -95,6 +143,12 @@ function Alumnos() {
     setSuccess('');
 
     try {
+      // Convertir la fecha al formato ISO para almacenar en la base de datos
+      let fechaNacimientoFormatted = null;
+      if (nuevoAlumno.fecha_nacimiento) {
+        fechaNacimientoFormatted = nuevoAlumno.fecha_nacimiento.toISOString().split('T')[0];
+      }
+
       const { error } = await supabase
         .from('alumnos')
         .insert([{
@@ -102,6 +156,8 @@ function Alumnos() {
           email: nuevoAlumno.email,
           telefono: nuevoAlumno.telefono,
           dni: nuevoAlumno.dni,
+          fecha_nacimiento: fechaNacimientoFormatted,
+          requiere_factura: nuevoAlumno.requiere_factura,
         }]);
 
       if (error) throw error;
@@ -121,6 +177,16 @@ function Alumnos() {
     setSuccess('');
 
     try {
+      // Convertir la fecha al formato ISO para almacenar en la base de datos
+      let fechaNacimientoFormatted = null;
+      if (selectedAlumno.fecha_nacimiento) {
+        if (typeof selectedAlumno.fecha_nacimiento === 'string') {
+          fechaNacimientoFormatted = selectedAlumno.fecha_nacimiento;
+        } else {
+          fechaNacimientoFormatted = selectedAlumno.fecha_nacimiento.toISOString().split('T')[0];
+        }
+      }
+
       const { error } = await supabase
         .from('alumnos')
         .update({
@@ -128,6 +194,8 @@ function Alumnos() {
           email: selectedAlumno.email,
           telefono: selectedAlumno.telefono,
           dni: selectedAlumno.dni,
+          fecha_nacimiento: fechaNacimientoFormatted,
+          requiere_factura: selectedAlumno.requiere_factura,
         })
         .eq('id', selectedAlumno.id);
 
@@ -156,6 +224,22 @@ function Alumnos() {
     } catch (error) {
       console.error('Error al eliminar alumno:', error.message);
       setError('Error al eliminar el alumno: ' + error.message);
+    }
+  };
+
+  const cargarAlumnos = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('alumnos')
+        .select('*')
+        .order('nombre');
+
+      if (error) throw error;
+      setAlumnos(data || []);
+      setAlumnosFiltrados(data || []);
+    } catch (error) {
+      console.error('Error al cargar alumnos:', error.message);
+      setError('Error al cargar los alumnos: ' + error.message);
     }
   };
 
@@ -195,38 +279,119 @@ function Alumnos() {
         </Alert>
       )}
 
-      <TableContainer component={Paper}>
-        <Table>
+      {/* Buscador de alumnos */}
+      <Box sx={{ mb: 3 }}>
+        <TextField
+          fullWidth
+          label="Buscar alumno por nombre o DNI"
+          variant="outlined"
+          value={busqueda}
+          onChange={handleBusquedaChange}
+          placeholder="Ingrese nombre o DNI para buscar..."
+          InputProps={{
+            sx: { borderRadius: 2 },
+            startAdornment: (
+              <Box sx={{ mr: 1, display: 'flex', alignItems: 'center' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+                </svg>
+              </Box>
+            ),
+            endAdornment: busqueda && (
+              <IconButton 
+                size="small" 
+                onClick={limpiarBusqueda}
+                aria-label="limpiar búsqueda"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+                </svg>
+              </IconButton>
+            )
+          }}
+        />
+        {/* Contador de resultados */}
+        {busqueda && (
+          <Typography variant="body2" sx={{ mt: 1, ml: 1, color: 'text.secondary' }}>
+            {alumnosFiltrados.length} {alumnosFiltrados.length === 1 ? 'resultado encontrado' : 'resultados encontrados'}
+          </Typography>
+        )}
+      </Box>
+
+      <TableContainer component={Paper} sx={{ boxShadow: 2, borderRadius: 2 }}>
+        <Table sx={{ minWidth: 650 }}>
           <TableHead>
-            <TableRow>
-              <TableCell>Nombre</TableCell>
-              <TableCell>DNI</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Teléfono</TableCell>
-              <TableCell>Acciones</TableCell>
+            <TableRow sx={{ backgroundColor: 'primary.light' }}>
+              <TableCell sx={{ fontWeight: 'bold', color: 'white' }}>Nombre</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: 'white' }}>DNI</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: 'white' }}>Email</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: 'white' }}>Teléfono</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: 'white' }}>Fecha Nac.</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: 'white' }}>Factura</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: 'white' }}>Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {alumnos.map((alumno) => (
-              <TableRow key={alumno.id}>
-                <TableCell>{alumno.nombre}</TableCell>
-                <TableCell>{alumno.dni}</TableCell>
-                <TableCell>{alumno.email}</TableCell>
-                <TableCell>{alumno.telefono}</TableCell>
-                <TableCell>
-                  <Tooltip title="Editar">
-                    <IconButton onClick={() => handleOpenEdit(alumno)}>
-                      <EditIcon />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Eliminar">
-                    <IconButton onClick={() => handleDelete(alumno.id)}>
-                      <DeleteIcon />
-                    </IconButton>
-                  </Tooltip>
+            {alumnosFiltrados.length > 0 ? (
+              alumnosFiltrados.map((alumno, index) => (
+                <TableRow 
+                  key={alumno.id}
+                  sx={{ 
+                    '&:nth-of-type(odd)': { backgroundColor: 'background.default' },
+                    '&:hover': { backgroundColor: 'action.hover' }
+                  }}
+                >
+                  <TableCell>{alumno.nombre}</TableCell>
+                  <TableCell>{alumno.dni}</TableCell>
+                  <TableCell>{alumno.email}</TableCell>
+                  <TableCell>{alumno.telefono}</TableCell>
+                  <TableCell>{alumno.fecha_nacimiento ? new Date(alumno.fecha_nacimiento).toLocaleDateString() : '-'}</TableCell>
+                  <TableCell>{alumno.requiere_factura ? 'Sí' : 'No'}</TableCell>
+                  <TableCell>
+                    <Tooltip title="Editar">
+                      <IconButton 
+                        onClick={() => handleOpenEdit(alumno)}
+                        color="primary"
+                        size="small"
+                      >
+                        <EditIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Eliminar">
+                      <IconButton 
+                        onClick={() => handleDelete(alumno.id)}
+                        color="error"
+                        size="small"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                  {busqueda ? (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 2 }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="#ccc" viewBox="0 0 16 16">
+                        <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+                      </svg>
+                      <Typography variant="h6" sx={{ mt: 2, color: 'text.secondary' }}>
+                        No se encontraron alumnos con esa búsqueda
+                      </Typography>
+                      <Button variant="text" onClick={limpiarBusqueda} sx={{ mt: 1 }}>
+                        Limpiar búsqueda
+                      </Button>
+                    </Box>
+                  ) : (
+                    <Typography variant="h6" sx={{ color: 'text.secondary' }}>
+                      No hay alumnos registrados
+                    </Typography>
+                  )}
                 </TableCell>
               </TableRow>
-            ))}
+            )}
           </TableBody>
         </Table>
       </TableContainer>
@@ -273,6 +438,32 @@ function Alumnos() {
               margin="normal"
               required
             />
+            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={es}>
+              <DatePicker
+                label="Fecha de Nacimiento"
+                value={nuevoAlumno.fecha_nacimiento}
+                onChange={handleFechaNacimientoChange}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    margin: "normal"
+                  }
+                }}
+              />
+            </LocalizationProvider>
+            <FormGroup>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={nuevoAlumno.requiere_factura}
+                    onChange={handleChange}
+                    name="requiere_factura"
+                    color="primary"
+                  />
+                }
+                label="Requiere Factura"
+              />
+            </FormGroup>
           </Box>
         </DialogContent>
         <DialogActions>
@@ -325,6 +516,32 @@ function Alumnos() {
               margin="normal"
               required
             />
+            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={es}>
+              <DatePicker
+                label="Fecha de Nacimiento"
+                value={selectedAlumno?.fecha_nacimiento ? new Date(selectedAlumno.fecha_nacimiento) : null}
+                onChange={handleEditFechaNacimientoChange}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    margin: "normal"
+                  }
+                }}
+              />
+            </LocalizationProvider>
+            <FormGroup>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={selectedAlumno?.requiere_factura || false}
+                    onChange={handleEditChange}
+                    name="requiere_factura"
+                    color="primary"
+                  />
+                }
+                label="Requiere Factura"
+              />
+            </FormGroup>
           </Box>
         </DialogContent>
         <DialogActions>

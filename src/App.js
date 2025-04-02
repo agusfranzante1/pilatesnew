@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -12,10 +12,12 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Alumnos from './pages/Alumnos';
 import Turnos from './pages/Turnos';
 import Pagos from './pages/Pagos';
+import Planes from './pages/Planes';
 import TurnosPublicos from './pages/TurnosPublicos';
 import Asistencia from './pages/Asistencia';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import DiagnosticoBaseDatos from './components/DiagnosticoBaseDatos';
 import { AuthProvider } from './context/AuthContext';
 
 const theme = createTheme({
@@ -50,6 +52,31 @@ function MainLayout({ children }) {
 }
 
 function App() {
+  // Añadir función global para cargar turnos desde cualquier página
+  useEffect(() => {
+    // Definir una función global para recargar turnos
+    window.cargarTurnos = async () => {
+      console.log('Intentando recargar turnos globalmente');
+      
+      try {
+        // Emitir un evento personalizado que puedan escuchar las páginas de turnos
+        const event = new CustomEvent('turnosActualizados', { detail: { source: 'global' } });
+        window.dispatchEvent(event);
+        
+        console.log('Evento global de recarga de turnos emitido');
+        return true;
+      } catch (error) {
+        console.error('Error al intentar recargar turnos globalmente:', error);
+        return false;
+      }
+    };
+    
+    // Limpiar la función global al desmontar
+    return () => {
+      delete window.cargarTurnos;
+    };
+  }, []);
+
   return (
     <ThemeProvider theme={theme}>
       <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={es}>
@@ -61,6 +88,7 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/turnos-publicos" element={<TurnosPublicos />} />
+              <Route path="/diagnostico" element={<DiagnosticoBaseDatos />} />
               
               {/* Rutas protegidas */}
               <Route element={<ProtectedRoute />}>
@@ -77,6 +105,11 @@ function App() {
                 <Route path="/pagos" element={
                   <MainLayout>
                     <Pagos />
+                  </MainLayout>
+                } />
+                <Route path="/planes" element={
+                  <MainLayout>
+                    <Planes />
                   </MainLayout>
                 } />
                 <Route path="/asistencia" element={

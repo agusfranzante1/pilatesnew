@@ -10,13 +10,15 @@ import {
   Toolbar,
   Typography,
   Box,
-  Button
+  Button,
+  Tooltip
 } from '@mui/material';
 import PeopleIcon from '@mui/icons-material/People';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import PaymentIcon from '@mui/icons-material/Payment';
 import HowToRegIcon from '@mui/icons-material/HowToReg';
 import LogoutIcon from '@mui/icons-material/Logout';
+import ListAltIcon from '@mui/icons-material/ListAlt';
 import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 240;
@@ -29,7 +31,12 @@ function Navigation() {
     { text: 'Alumnos', icon: <PeopleIcon />, path: '/' },
     { text: 'Turnos', icon: <CalendarMonthIcon />, path: '/turnos' },
     { text: 'Pagos', icon: <PaymentIcon />, path: '/pagos' },
+    { text: 'Planes', icon: <ListAltIcon />, path: '/planes' },
     { text: 'Asistencia', icon: <HowToRegIcon />, path: '/asistencia' }
+  ];
+
+  const secondaryItems = [
+    { text: 'Ver Calendario Público', icon: <CalendarMonthIcon />, path: '/turnos-publicos' }
   ];
 
   const handleLogout = async () => {
@@ -85,6 +92,33 @@ function Navigation() {
               </ListItem>
             ))}
           </List>
+          
+          {secondaryItems.length > 0 && (
+            <>
+              <Box sx={{ mx: 2, my: 1 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Acceso Público
+                </Typography>
+              </Box>
+              <List>
+                {secondaryItems.map((item) => (
+                  <Tooltip title="Ver turnos disponibles (acceso público)" key={item.text}>
+                    <ListItem
+                      button
+                      component={Link}
+                      to={item.path}
+                      selected={location.pathname === item.path}
+                    >
+                      <ListItemIcon>
+                        {item.icon}
+                      </ListItemIcon>
+                      <ListItemText primary={item.text} />
+                    </ListItem>
+                  </Tooltip>
+                ))}
+              </List>
+            </>
+          )}
         </Box>
       </Drawer>
     </>
