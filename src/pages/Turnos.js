@@ -925,7 +925,7 @@ function Turnos() {
           selectable={false}
           selectMirror={false}
           dayMaxEvents={true}
-          weekends={false}
+          weekends={true}
           slotMinTime="08:00:00"
           slotMaxTime="22:00:00"
           allDaySlot={false}
